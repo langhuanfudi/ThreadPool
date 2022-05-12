@@ -78,23 +78,37 @@ private:
 public:
     ThreadPool(const int n_threads = 4) : m_threads(std::vector<std::thread>(n_threads)), m_shutdown(false) {}
     ThreadPool(const ThreadPool &) = delete;
+    ThreadPool(ThreadPool &&) = delete;
+    ThreadPool &operator=(const ThreadPool &) = delete;
+    ThreadPool &operator=(ThreadPool &&) = delete;
+
+    void init() {
+        for (int i = 0; i < m_threads.size(); ++i) {
+            m_threads.at(i) = std::thread(ThreadWorker(this, i));
+        }
+    }
+
+    void shutdown() {
+        m_shutdown = true;
+        m_conditional_lock.notify_all();
+        for (int i = 0; i < m_threads.size(); ++i) {
+            if (m_threads.at(i).joinable()) {
+                m_threads.at(i).join();
+            }
+        }
+    }
+
+    /**
+     * 提交函数
+     * 接收任何参数的任何函数
+     * 立即返回"东西", 避免阻塞主线程, "东西"应该包含任务结束的结果
+     */
+    template<typename F, typename ... Args>
+    auto submit(F &&f, )
 
 };
 
-/**
- * 提交函数
- * 接收任何参数的任何函数
- * 立即返回"东西", 避免阻塞主线程, "东西"应该包含任务结束的结果
- */
-template<typename F, typename ... Args>
-auto submit(F &&f, Args &&...args) -> std::future<decltype(f(args...))> {
-    // func是一个将被运行的函数
-    std::function<decltype(f(args...))()> func = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
-    auto task_ptr = std::make_shared<std::packaged_task<decltype(f(args...))()>>(func);
 
-    std::function<void()> warpper_func = [task_ptr]() {
-        (*task_ptr)();
-    };
-}
+
 
 #endif //THREADPOOL_THREADPOOL_H
