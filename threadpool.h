@@ -9,7 +9,10 @@
 #include <mutex>
 #include <future>
 
-/*************************************************** 任务队列 ***************************************************/
+/**
+ * 线程安全的任务队列
+ */
+
 template<typename T>
 class SafeQueue {
 private:
@@ -45,7 +48,9 @@ public:
 
 };
 
-/*************************************************** 线程池 ***************************************************/
+/**
+ * 线程池
+ */
 
 class ThreadPool {
 private:
@@ -82,12 +87,15 @@ public:
     ThreadPool &operator=(const ThreadPool &) = delete;
     ThreadPool &operator=(ThreadPool &&) = delete;
 
+    /* 声明并分配工作线程，将工作线程放入工作线程队列m_threads中 */
     void init() {
         for (int i = 0; i < m_threads.size(); ++i) {
             m_threads.at(i) = std::thread(ThreadWorker(this, i));
         }
     }
 
+//    TODO 将shutdown()放在~ThreadPool()中
+    /* 唤醒所有工作线程，并等待完成所有工作后关闭线程池 */
     void shutdown() {
         m_shutdown = true;
         m_conditional_lock.notify_all();
@@ -100,15 +108,20 @@ public:
 
     /**
      * 提交函数
-     * 接收任何参数的任何函数
-     * 立即返回"东西", 避免阻塞主线程, "东西"应该包含任务结束的结果
+     * 接收任何参数的任何函数, 立即返回任务结束的结果, 避免阻塞主线程
      */
     template<typename F, typename ... Args>
-    auto submit(F &&f, )
-
+    auto submit(F &&f, Args &&...args) -> std::future<decltype(f(args...))> {
+        std::function<decltype(f(args...))()> func = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
+        auto task_ptr = std::make_shared<std::packaged_task<decltype(f(args...))()>>(func);
+        std::function<void()> warpper_func = [task_ptr]() { // 按值访问task_ptr
+            (*task_ptr)();
+        };
+        m_queue.enqueue(warpper_func);
+        m_conditional_lock.notify_one();
+        return task_ptr->get_future();
+    }
 };
-
-
 
 
 #endif //THREADPOOL_THREADPOOL_H
